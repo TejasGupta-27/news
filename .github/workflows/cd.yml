@@ -1,0 +1,16 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [backend, frontend, ml]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t ai-news-${{ matrix.service }}:${{ github.sha }} ./${{ matrix.service }}
