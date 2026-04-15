@@ -98,6 +98,9 @@ services:
       WANDB_API_KEY: ${WANDB_API_KEY:-}
       WANDB_ENABLED: ${WANDB_ENABLED:-true}
       WANDB_PROJECT: ai-news-classifier
+      HF_MODEL_REPO: ${HF_MODEL_REPO:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_PRIVATE: ${HF_PRIVATE:-false}
     ports:
       - "8000:8000"
     depends_on:
@@ -122,6 +125,37 @@ services:
     depends_on:
       - backend
 
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata:
   miniodata:
+  promdata:
+  grafanadata:

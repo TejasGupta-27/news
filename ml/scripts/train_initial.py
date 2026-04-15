@@ -100,6 +100,15 @@ def main():
     promote_to_production(run_id)
     print("Model promoted to production.")
 
+    from pipeline import hf_hub
+    if hf_hub.is_enabled():
+        try:
+            hf_hub.push_model(model_save_dir, mlflow_run_id=run_id, metrics=metrics)
+        except Exception as e:
+            print(f"HF push failed (non-fatal): {e}")
+    else:
+        print("HF push skipped (HF_MODEL_REPO / HF_TOKEN not set)")
+
     # W&B: log final summary, confusion matrix, model artifact, per-class metrics table
     if use_wandb:
         wandb_tracker.log_summary(metrics)

@@ -1,0 +1,111 @@
+{
+  "title": "AI News Classifier",
+  "uid": "ai-news",
+  "schemaVersion": 38,
+  "version": 1,
+  "editable": true,
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Current Model Version",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [
+        {"expr": "ainews_model_info", "legendFormat": "{{version}}", "refId": "A"}
+      ],
+      "options": {"reduceOptions": {"calcs": ["last"], "fields": "/^version$/"}, "textMode": "name"}
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Model F1 (macro)",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "ainews_model_f1_macro", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 4}}
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Drift Detected?",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "ainews_drift_detected", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "OK", "color": "green"}, "1": {"text": "DRIFT", "color": "red"}}}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Predictions / min",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "sum(rate(ainews_predictions_total[1m])) * 60", "refId": "A"}]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Prediction rate by class",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "sum by (label) (rate(ainews_predictions_total[5m]))", "legendFormat": "{{label}}", "refId": "A"}
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Prediction latency (p50/p95/p99)",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum(rate(ainews_prediction_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(ainews_prediction_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B"},
+        {"expr": "histogram_quantile(0.99, sum(rate(ainews_prediction_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Drift label p-value (lower = more drift)",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "ainews_drift_label_pvalue", "legendFormat": "label p-value", "refId": "A"},
+        {"expr": "vector(0.05)", "legendFormat": "threshold", "refId": "B"}
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Confidence distribution (p50/p95)",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum(rate(ainews_prediction_confidence_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(ainews_prediction_confidence_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B"}
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Cache hit rate",
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "rate(ainews_cache_hits_total[5m]) / (rate(ainews_cache_hits_total[5m]) + rate(ainews_cache_misses_total[5m]))", "legendFormat": "hit rate", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}}
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Retrain runs (by status)",
+      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "sum by (status) (increase(ainews_retrain_runs_total[1h]))", "legendFormat": "{{status}}", "refId": "A"}
+      ]
+    }
+  ]
+}

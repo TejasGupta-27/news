@@ -53,6 +53,7 @@ async def _do_retrain(drift_report_id: uuid.UUID | None, reason: str):
             run.model_uri = result.get("model_uri", "")
             run.completed_at = datetime.now(timezone.utc)
 
+            from app.utils import metrics as m
             if result["deployed"]:
                 run.status = "completed"
                 run.deployed = True
@@ -60,11 +61,15 @@ async def _do_retrain(drift_report_id: uuid.UUID | None, reason: str):
                 await classifier_service.reload()
                 from app.utils.cache import flush_prediction_cache
                 await flush_prediction_cache()
+                m.set_model_info(classifier_service.model_version)
+                m.model_f1_macro.set(result["f1_macro"])
+                m.model_accuracy.set(result["accuracy"])
                 print("New model deployed and cache flushed")
             else:
                 run.status = "rejected"
                 print(f"New model rejected: F1={result['f1_macro']:.4f}")
 
+            m.retrain_runs_total.labels(status=run.status, trigger=reason).inc()
             await db.commit()
             return run
 
@@ -166,6 +171,17 @@ def _retrain_sync() -> dict:
             promote_to_production(mlflow_run_id)
         except Exception as e:
             print(f"MLflow logging failed: {e}")
+
+        try:
+            from ml.pipeline import hf_hub
+            if hf_hub.is_enabled():
+                hf_hub.push_model(
+                    model_save_dir,
+                    mlflow_run_id=mlflow_run_id,
+                    metrics={"accuracy": new_acc, "f1_macro": new_f1},
+                )
+        except Exception as e:
+            print(f"HF push failed (non-fatal): {e}")
 
     # W&B: summary + cross-link MLflow run ID + model artifact
     if use_wandb:

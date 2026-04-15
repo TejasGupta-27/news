@@ -22,23 +22,47 @@ class ClassifierService:
         await asyncio.to_thread(self._load_model_sync)
 
     def _load_model_sync(self):
-        model_dir = tempfile.mkdtemp()
-        try:
-            download_directory(settings.minio_bucket, "production/model", model_dir)
-            files = os.listdir(model_dir)
-            if not files:
-                raise FileNotFoundError("No model files in MinIO")
-        except Exception as e:
-            print(f"Could not load model from MinIO: {e}")
-            print("Loading base model from HuggingFace...")
-            model_dir = None
+        loaded = False
 
-        if model_dir:
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_dir)
-            self.tokenizer = AutoTokenizer.from_pretrained(model_dir)
-            self.model_version = "production"
-            self._model_dir = model_dir
-        else:
+        if settings.hf_model_repo:
+            try:
+                repo = settings.hf_model_repo
+                token = settings.hf_token or None
+                if "/" not in repo and token:
+                    try:
+                        from huggingface_hub import whoami
+                        user = whoami(token=token).get("name")
+                        if user:
+                            repo = f"{user}/{repo}"
+                    except Exception as e:
+                        print(f"whoami lookup failed: {e}")
+
+                print(f"Loading model from Hugging Face Hub: {repo}")
+                self.model = AutoModelForSequenceClassification.from_pretrained(
+                    repo, token=token
+                )
+                self.tokenizer = AutoTokenizer.from_pretrained(repo, token=token)
+                self.model_version = f"hf:{repo}"
+                loaded = True
+            except Exception as e:
+                print(f"HF Hub load failed ({e}); falling back to MinIO")
+
+        if not loaded:
+            model_dir = tempfile.mkdtemp()
+            try:
+                download_directory(settings.minio_bucket, "production/model", model_dir)
+                if not os.listdir(model_dir):
+                    raise FileNotFoundError("No model files in MinIO")
+                self.model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+                self.tokenizer = AutoTokenizer.from_pretrained(model_dir)
+                self.model_version = "production"
+                self._model_dir = model_dir
+                loaded = True
+            except Exception as e:
+                print(f"Could not load model from MinIO: {e}")
+                print("Loading base (untrained) model from HuggingFace...")
+
+        if not loaded:
             self.model = AutoModelForSequenceClassification.from_pretrained(
                 settings.model_name, num_labels=4
             )

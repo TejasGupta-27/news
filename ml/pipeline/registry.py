@@ -67,3 +67,41 @@ def promote_to_production(run_id: str):
             version=versions[0].version,
             stage="Production",
         )
+
+
+def list_model_versions() -> list[dict]:
+    setup_mlflow()
+    client = MlflowClient()
+    versions = client.search_model_versions("name='ai-news-classifier'")
+    return [
+        {
+            "version": v.version,
+            "run_id": v.run_id,
+            "stage": v.current_stage,
+            "source": v.source,
+            "creation_timestamp": v.creation_timestamp,
+        }
+        for v in sorted(versions, key=lambda x: int(x.version), reverse=True)
+    ]
+
+
+def promote_version_to_production(version: str) -> dict:
+    setup_mlflow()
+    client = MlflowClient()
+    mv = client.get_model_version(name="ai-news-classifier", version=version)
+    client.transition_model_version_stage(
+        name="ai-news-classifier",
+        version=version,
+        stage="Production",
+        archive_existing_versions=True,
+    )
+    return {"version": mv.version, "run_id": mv.run_id, "source": mv.source}
+
+
+def download_version_artifacts(version: str, dest_dir: str) -> str:
+    import mlflow
+    setup_mlflow()
+    client = MlflowClient()
+    mv = client.get_model_version(name="ai-news-classifier", version=version)
+    local = mlflow.artifacts.download_artifacts(artifact_uri=mv.source, dst_path=dest_dir)
+    return local

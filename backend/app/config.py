@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     wandb_project: str = "ai-news-classifier"
     wandb_entity: str = ""
     model_name: str = "distilbert-base-uncased"
+    hf_model_repo: str = ""
+    hf_token: str = ""
     max_seq_length: int = 256
     drift_check_interval_minutes: int = 30
     drift_window_size: int = 500

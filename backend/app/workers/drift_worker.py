@@ -90,6 +90,14 @@ async def run_drift_check():
             triggered_retraining=False,
         )
 
+        from app.utils import metrics as m
+        m.drift_label_pvalue.set(label_pvalue)
+        m.drift_confidence_score.set(conf_score)
+        m.drift_detected.set(1 if (label_drift or conf_drift) else 0)
+        m.drift_checks_total.labels(
+            outcome="drift" if (label_drift or conf_drift) else "ok"
+        ).inc()
+
         if label_drift or conf_drift:
             print(f"Drift detected! Label p={label_pvalue:.4f}, Confidence drift={conf_drift}")
             report.triggered_retraining = True

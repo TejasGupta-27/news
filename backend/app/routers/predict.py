@@ -15,6 +15,8 @@ from app.schemas.prediction import (
 )
 from app.services.classifier import classifier_service
 from app.utils.cache import text_hash, get_cached_prediction, set_cached_prediction
+from app.utils import metrics as m
+import time
 
 router = APIRouter()
 
@@ -26,9 +28,17 @@ async def predict(req: PredictRequest, db: AsyncSession = Depends(get_db)):
     if not req.explain:
         cached = await get_cached_prediction(hash_key)
         if cached:
+            m.cache_hits.inc()
             return PredictResponse(**cached)
+        m.cache_misses.inc()
 
+    t0 = time.perf_counter()
     result = classifier_service.predict(req.text)
+    m.prediction_latency.observe(time.perf_counter() - t0)
+    m.prediction_total.labels(
+        label=result["label"], model_version=classifier_service.model_version
+    ).inc()
+    m.prediction_confidence.observe(result["confidence"])
 
     explanation = None
     if req.explain:
