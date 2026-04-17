@@ -1,6 +1,5 @@
 from collections import Counter
 
-import numpy as np
 from scipy import stats
 from river.drift import PageHinkley
 

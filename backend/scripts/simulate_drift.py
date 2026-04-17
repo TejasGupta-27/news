@@ -121,7 +121,6 @@ async def simulate_user_feedback(count: int, wrong_rate: float, api_url: str):
     import httpx
 
     label_names = settings.label_names
-    n_labels = len(label_names)
     inserted = 0
     corrected = 0
 

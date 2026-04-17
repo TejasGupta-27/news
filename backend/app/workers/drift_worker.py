@@ -172,7 +172,7 @@ async def run_drift_check():
                     print(f"[drift_worker] retrain claimed ({tr_id}, reason={reason}, model={model_type})")
                 else:
                     report.triggered_retraining = False
-                    print(f"[drift_worker] retrain slot not claimed (another run already active)")
+                    print("[drift_worker] retrain slot not claimed (another run already active)")
                 await db.commit()
 
     await engine.dispose()
