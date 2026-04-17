@@ -89,6 +89,21 @@ async def run_drift_check():
             await engine.dispose()
             return None
 
+        last_report_q = (
+            select(DriftReport).order_by(DriftReport.check_time.desc()).limit(1)
+        )
+        last_report = (await db.execute(last_report_q)).scalar_one_or_none()
+        if (
+            last_report
+            and last_report.label_drift_detected
+            and (last_deploy is None or last_deploy.completed_at <= last_report.check_time)
+        ):
+            print(
+                f"Unresolved drift detected at {last_report.check_time}; suppressing duplicate report"
+            )
+            await engine.dispose()
+            return last_report
+
         query = select(PredictionLog).order_by(PredictionLog.created_at.desc())
         if since_deploy is not None:
             query = query.where(PredictionLog.created_at > since_deploy)
@@ -144,11 +159,16 @@ async def run_drift_check():
 
         if label_drift or conf_drift:
             print(f"Drift detected! Label p={label_pvalue:.4f}, Confidence drift={conf_drift}")
-            from app.services.retrainer import trigger_retraining
+            from app.services.retrainer import claim_retrain_slot, _execute_retrain
             reason = "label_drift" if label_drift else "confidence_drift"
-            _fire_and_forget(trigger_retraining(report.id, reason))
-            print(f"[drift_worker] scheduled retrain (reason={reason}, report_id={report.id})")
-            report.triggered_retraining = True
+            tr_id = await claim_retrain_slot(report.id, reason)
+            if tr_id is not None:
+                _fire_and_forget(_execute_retrain(tr_id, reason))
+                report.triggered_retraining = True
+                print(f"[drift_worker] retrain claimed ({tr_id}, reason={reason})")
+            else:
+                report.triggered_retraining = False
+                print(f"[drift_worker] retrain slot not claimed (another run already active)")
             await db.commit()
 
     await engine.dispose()

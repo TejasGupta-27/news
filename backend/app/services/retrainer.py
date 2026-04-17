@@ -10,32 +10,46 @@ from app.config import settings
 _retraining_lock = asyncio.Lock()
 
 
-async def trigger_retraining(drift_report_id: uuid.UUID | None, reason: str):
-    if _retraining_lock.locked():
-        print("Retraining already in progress, skipping")
-        return None
-
-    async with _retraining_lock:
-        return await _do_retrain(drift_report_id, reason)
-
-
-async def _do_retrain(drift_report_id: uuid.UUID | None, reason: str):
+async def claim_retrain_slot(
+    drift_report_id: uuid.UUID | None, reason: str
+) -> uuid.UUID | None:
+    from sqlalchemy import select
     from app.db import async_session
     from app.models.training_run import TrainingRun
 
-    run_id = str(uuid.uuid4())
-
-    training_run_id = uuid.uuid4()
     async with async_session() as db:
-        training_run = TrainingRun(
-            id=training_run_id,
-            mlflow_run_id="pending",
-            trigger_reason=reason,
-            drift_report_id=drift_report_id,
-            status="running",
+        running = (
+            await db.execute(select(TrainingRun).where(TrainingRun.status == "running").limit(1))
+        ).scalar_one_or_none()
+        if running:
+            print(f"Retraining already in progress ({running.id}); not claiming a new slot")
+            return None
+
+        training_run_id = uuid.uuid4()
+        db.add(
+            TrainingRun(
+                id=training_run_id,
+                mlflow_run_id="pending",
+                trigger_reason=reason,
+                drift_report_id=drift_report_id,
+                status="running",
+            )
         )
-        db.add(training_run)
         await db.commit()
+    return training_run_id
+
+
+async def trigger_retraining(drift_report_id: uuid.UUID | None, reason: str):
+    training_run_id = await claim_retrain_slot(drift_report_id, reason)
+    if training_run_id is None:
+        return None
+    async with _retraining_lock:
+        return await _execute_retrain(training_run_id, reason)
+
+
+async def _execute_retrain(training_run_id: uuid.UUID, reason: str):
+    from app.db import async_session
+    from app.models.training_run import TrainingRun
 
     try:
         result = await asyncio.to_thread(_retrain_sync)
@@ -94,7 +108,7 @@ async def _do_retrain(drift_report_id: uuid.UUID | None, reason: str):
 def _retrain_sync() -> dict:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml"))
 
-    from ml.pipeline.dataset import load_ag_news
+    from ml.pipeline.dataset import build_training_dataset
     from ml.pipeline.tokenizer import get_tokenizer, tokenize_dataset
     from ml.pipeline.trainer import create_model, train_model
     from ml.pipeline.metrics import compute_metrics
@@ -108,13 +122,25 @@ def _retrain_sync() -> dict:
     num_epochs = 3 if use_gpu else 1
     batch_size = 32 if use_gpu else 16
 
-    retrain_config = {"trigger": "retrain", "epochs": num_epochs, "batch_size": batch_size, "learning_rate": 2e-5}
+    train_ds, test_ds, n_corrections = build_training_dataset(
+        max_train_samples=max_train,
+        max_test_samples=max_test,
+        correction_upsample=5,
+        sync_db_url=settings.sync_database_url,
+    )
+
+    retrain_config = {
+        "trigger": "retrain",
+        "epochs": num_epochs,
+        "batch_size": batch_size,
+        "learning_rate": 2e-5,
+        "production_corrections": n_corrections,
+        "correction_upsample": 5 if n_corrections else 0,
+    }
 
     use_wandb = wandb_tracker.is_enabled()
     if use_wandb:
         wandb_tracker.setup_wandb(run_name="retrain-drift", config=retrain_config)
-
-    train_ds, test_ds = load_ag_news(max_train_samples=max_train, max_test_samples=max_test)
     tokenizer = get_tokenizer()
 
     train_tokenized = tokenize_dataset(train_ds, tokenizer)
