@@ -170,7 +170,9 @@ def _retrain_sync() -> dict:
             )
             promote_to_production(mlflow_run_id)
         except Exception as e:
+            import traceback
             print(f"MLflow logging failed: {e}")
+            traceback.print_exc()
 
         try:
             from ml.pipeline import hf_hub
