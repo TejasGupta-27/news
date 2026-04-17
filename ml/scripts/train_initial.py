@@ -3,8 +3,32 @@ import sys
 import os
 import tempfile
 
+import mlflow
 import numpy as np
 import torch
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def load_dotenv(path: str) -> None:
+    if not os.path.exists(path):
+        return
+    print(f"Loading environment variables from {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+load_dotenv(os.path.join(ROOT_DIR, ".env"))
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
@@ -38,14 +62,15 @@ def main():
     )
     args = p.parse_args()
 
+    hf_model_repo = args.hf_model_repo or os.environ.get("HF_MODEL_REPO")
     dataset = args.dataset
     if dataset is None:
-        if args.hf_model_repo and args.hf_model_repo.endswith("-b"):
+        if hf_model_repo and hf_model_repo.endswith("-b"):
             dataset = "20_newsgroups"
         else:
             dataset = "ag_news"
 
-    use_wandb = wandb_tracker.is_enabled()
+    is_model_b = dataset == "20_newsgroups" or (hf_model_repo and hf_model_repo.endswith("-b"))
     train_config = {
         "model_name": "distilbert-base-uncased",
         "num_epochs": 3,
@@ -53,7 +78,9 @@ def main():
         "learning_rate": 2e-5,
         "max_seq_length": 256,
         "dataset": dataset,
+        "data_subset": "10%" if is_model_b else "full",
     }
+    use_wandb = wandb_tracker.is_enabled()
 
     # W&B init first so HF Trainer can attach to the same run
     if use_wandb:
@@ -66,6 +93,13 @@ def main():
     else:
         print("Loading 20 Newsgroups dataset and mapping into 4 label buckets...")
         train_ds, test_ds = load_20_newsgroups()
+
+    if is_model_b:
+        train_limit = max(1, int(len(train_ds) * 0.1))
+        test_limit = max(1, int(len(test_ds) * 0.1))
+        print(f"Using 10% subset for Model B: {train_limit} train examples, {test_limit} test examples")
+        train_ds = train_ds.select(range(train_limit))
+        test_ds = test_ds.select(range(test_limit))
 
     ref_dist = get_reference_distribution(test_ds)
     print(f"Reference distribution: {ref_dist}")
@@ -92,13 +126,17 @@ def main():
         eval_dataset=test_tokenized,
         compute_metrics_fn=compute_metrics,
         output_dir=output_dir,
-        num_epochs=3,
-        batch_size=32,
-        learning_rate=2e-5,
+        num_epochs=train_config["num_epochs"],
+        batch_size=train_config["batch_size"],
+        learning_rate=train_config["learning_rate"],
     )
 
     eval_results = trainer.evaluate()
     print(f"Eval results: {eval_results}")
+
+    if mlflow.active_run() is not None:
+        print("Closing leftover active MLflow run before manual logging...")
+        mlflow.end_run()
 
     metrics = {
         "accuracy": eval_results["eval_accuracy"],
@@ -132,7 +170,7 @@ def main():
     promote_to_production(run_id)
     print("Model promoted to production.")
 
-    repo = args.hf_model_repo or os.environ.get("HF_MODEL_REPO")
+    repo = hf_model_repo
     if repo:
         try:
             hf_hub.push_model(model_save_dir, repo_id=repo, mlflow_run_id=run_id, metrics=metrics)

@@ -39,20 +39,20 @@ async def claim_retrain_slot(
     return training_run_id
 
 
-async def trigger_retraining(drift_report_id: uuid.UUID | None, reason: str):
+async def trigger_retraining(drift_report_id: uuid.UUID | None, reason: str, model_type: str = "A"):
     training_run_id = await claim_retrain_slot(drift_report_id, reason)
     if training_run_id is None:
         return None
     async with _retraining_lock:
-        return await _execute_retrain(training_run_id, reason)
+        return await _execute_retrain(training_run_id, reason, model_type)
 
 
-async def _execute_retrain(training_run_id: uuid.UUID, reason: str):
+async def _execute_retrain(training_run_id: uuid.UUID, reason: str, model_type: str = "A"):
     from app.db import async_session
     from app.models.training_run import TrainingRun
 
     try:
-        result = await asyncio.to_thread(_retrain_sync)
+        result = await asyncio.to_thread(_retrain_sync, model_type)
 
         async with async_session() as db:
             from sqlalchemy import select
@@ -105,7 +105,7 @@ async def _execute_retrain(training_run_id: uuid.UUID, reason: str):
         return None
 
 
-def _retrain_sync() -> dict:
+def _retrain_sync(model_type: str = "A") -> dict:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml"))
 
     from ml.pipeline.dataset import build_training_dataset
@@ -122,12 +122,20 @@ def _retrain_sync() -> dict:
     num_epochs = 3 if use_gpu else 1
     batch_size = 32 if use_gpu else 16
 
-    train_ds, test_ds, n_corrections = build_training_dataset(
-        max_train_samples=max_train,
-        max_test_samples=max_test,
-        correction_upsample=5,
-        sync_db_url=settings.sync_database_url,
-    )
+    if model_type == "B":
+        from ml.pipeline.dataset import load_20_newsgroups
+        train_ds, test_ds = load_20_newsgroups(max_train_samples=max_train, max_test_samples=max_test)
+        hf_repo = settings.ab_model_b_hf_repo or "tron/news-khabar-b"
+    else:
+        from ml.pipeline.dataset import load_ag_news
+        train_ds, test_ds = load_ag_news(max_train_samples=max_train, max_test_samples=max_test)
+        train_ds, test_ds, n_corrections = build_training_dataset(
+            max_train_samples=max_train,
+            max_test_samples=max_test,
+            correction_upsample=5,
+            sync_db_url=settings.sync_database_url,
+        )
+        hf_repo = settings.hf_model_repo or "tron/news-khabar"
 
     retrain_config = {
         "trigger": "retrain",
@@ -205,6 +213,7 @@ def _retrain_sync() -> dict:
             if hf_hub.is_enabled():
                 hf_hub.push_model(
                     model_save_dir,
+                    repo_id=hf_repo,
                     mlflow_run_id=mlflow_run_id,
                     metrics={"accuracy": new_acc, "f1_macro": new_f1},
                 )

@@ -104,72 +104,76 @@ async def run_drift_check():
             await engine.dispose()
             return last_report
 
-        query = select(PredictionLog).order_by(PredictionLog.created_at.desc())
+        # Get unique model versions
+        model_versions_q = select(PredictionLog.model_version).distinct()
         if since_deploy is not None:
-            query = query.where(PredictionLog.created_at > since_deploy)
-        query = query.limit(settings.drift_window_size)
-        result = await db.execute(query)
-        predictions = result.scalars().all()
+            model_versions_q = model_versions_q.where(PredictionLog.created_at > since_deploy)
+        model_versions_result = await db.execute(model_versions_q)
+        model_versions = [row[0] for row in model_versions_result.all()]
 
-        if len(predictions) < 30:
-            if since_deploy:
-                print(
-                    f"Only {len(predictions)} predictions since last deploy at {since_deploy}; skipping drift check"
-                )
-            else:
-                print(f"Not enough predictions for drift check ({len(predictions)})")
-            return None
+        for model_version in model_versions:
+            query = select(PredictionLog).where(PredictionLog.model_version == model_version).order_by(PredictionLog.created_at.desc())
+            if since_deploy is not None:
+                query = query.where(PredictionLog.created_at > since_deploy)
+            query = query.limit(settings.drift_window_size)
+            result = await db.execute(query)
+            predictions = result.scalars().all()
 
-        labels = [p.predicted_name for p in predictions]
-        confidences = [p.confidence for p in predictions]
+            if len(predictions) < 30:
+                continue
 
-        label_pvalue, label_drift = check_label_drift(labels)
-        conf_score, conf_drift = check_confidence_drift(confidences)
-        current_dist = compute_current_distribution(labels)
+            labels = [p.predicted_name for p in predictions]
+            confidences = [p.confidence for p in predictions]
 
-        now = datetime.now(timezone.utc)
-        window_end = predictions[0].created_at
-        window_start = predictions[-1].created_at
+            label_pvalue, label_drift = check_label_drift(labels)
+            conf_score, conf_drift = check_confidence_drift(confidences)
+            current_dist = compute_current_distribution(labels)
 
-        report = DriftReport(
-            check_time=now,
-            window_start=window_start,
-            window_end=window_end,
-            sample_count=len(predictions),
-            label_drift_pvalue=label_pvalue,
-            label_drift_detected=label_drift,
-            confidence_drift_score=conf_score,
-            confidence_drift_detected=conf_drift,
-            reference_distribution=REFERENCE_DISTRIBUTION,
-            current_distribution=current_dist,
-            triggered_retraining=False,
-        )
+            now = datetime.now(timezone.utc)
+            window_end = predictions[0].created_at
+            window_start = predictions[-1].created_at
 
-        from app.utils import metrics as m
-        m.drift_label_pvalue.set(label_pvalue)
-        m.drift_confidence_score.set(conf_score)
-        m.drift_detected.set(1 if (label_drift or conf_drift) else 0)
-        m.drift_checks_total.labels(
-            outcome="drift" if (label_drift or conf_drift) else "ok"
-        ).inc()
+            report = DriftReport(
+                check_time=now,
+                window_start=window_start,
+                window_end=window_end,
+                sample_count=len(predictions),
+                label_drift_pvalue=label_pvalue,
+                label_drift_detected=label_drift,
+                confidence_drift_score=conf_score,
+                confidence_drift_detected=conf_drift,
+                reference_distribution=REFERENCE_DISTRIBUTION,
+                current_distribution=current_dist,
+                triggered_retraining=False,
+                model_version=model_version,
+            )
 
-        db.add(report)
-        await db.commit()
-        await db.refresh(report)
+            from app.utils import metrics as m
+            m.drift_label_pvalue.set(label_pvalue)
+            m.drift_confidence_score.set(conf_score)
+            m.drift_detected.set(1 if (label_drift or conf_drift) else 0)
+            m.drift_checks_total.labels(
+                outcome="drift" if (label_drift or conf_drift) else "ok"
+            ).inc()
 
-        if label_drift or conf_drift:
-            print(f"Drift detected! Label p={label_pvalue:.4f}, Confidence drift={conf_drift}")
-            from app.services.retrainer import claim_retrain_slot, _execute_retrain
-            reason = "label_drift" if label_drift else "confidence_drift"
-            tr_id = await claim_retrain_slot(report.id, reason)
-            if tr_id is not None:
-                _fire_and_forget(_execute_retrain(tr_id, reason))
-                report.triggered_retraining = True
-                print(f"[drift_worker] retrain claimed ({tr_id}, reason={reason})")
-            else:
-                report.triggered_retraining = False
-                print(f"[drift_worker] retrain slot not claimed (another run already active)")
+            db.add(report)
             await db.commit()
+            await db.refresh(report)
+
+            if label_drift or conf_drift:
+                print(f"Drift detected for model {model_version}! Label p={label_pvalue:.4f}, Confidence drift={conf_drift}")
+                from app.services.retrainer import claim_retrain_slot, _execute_retrain
+                reason = "label_drift" if label_drift else "confidence_drift"
+                model_type = "B" if model_version.startswith("ab-b:") else "A"
+                tr_id = await claim_retrain_slot(report.id, reason)
+                if tr_id is not None:
+                    _fire_and_forget(_execute_retrain(tr_id, reason, model_type))
+                    report.triggered_retraining = True
+                    print(f"[drift_worker] retrain claimed ({tr_id}, reason={reason}, model={model_type})")
+                else:
+                    report.triggered_retraining = False
+                    print(f"[drift_worker] retrain slot not claimed (another run already active)")
+                await db.commit()
 
     await engine.dispose()
     return report

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Integer, Float, Boolean, DateTime
+from sqlalchemy import Integer, Float, Boolean, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,7 @@ class DriftReport(Base):
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sample_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_version: Mapped[str | None] = mapped_column(String(160), nullable=True)
     label_drift_pvalue: Mapped[float | None] = mapped_column(Float, nullable=True)
     label_drift_detected: Mapped[bool] = mapped_column(Boolean, nullable=False)
     confidence_drift_score: Mapped[float | None] = mapped_column(Float, nullable=True)
