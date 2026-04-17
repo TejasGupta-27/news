@@ -1,4 +1,5 @@
 export interface PredictResponse {
+  prediction_id: string | null;
   label: string;
   label_id: number;
   confidence: number;

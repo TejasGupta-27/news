@@ -27,6 +27,18 @@ BIASED_TEXTS = {
         "Shares of the tech giant surged after strong quarterly earnings.",
         "Oil prices climbed amid tight supply forecasts.",
     ],
+    "World": [
+        "The United Nations Security Council convened an emergency session on the humanitarian crisis.",
+        "Diplomats from twelve countries gathered in Geneva to discuss the peace accord.",
+        "Protests erupted in the capital following the contested election results.",
+        "The prime minister announced new sanctions targeting foreign officials.",
+    ],
+    "Technology": [
+        "Researchers unveiled a breakthrough in quantum computing at the conference.",
+        "The startup released an open-source framework for distributed machine learning.",
+        "A newly disclosed zero-day vulnerability prompted an urgent security patch.",
+        "The chip company launched its next-generation GPU with record bandwidth.",
+    ],
 }
 
 
@@ -105,17 +117,81 @@ async def run_drift_check():
     print(f"triggered retrain:   {report['triggered_retraining']}")
 
 
+async def simulate_user_feedback(count: int, wrong_rate: float, api_url: str):
+    import httpx
+
+    label_names = settings.label_names
+    n_labels = len(label_names)
+    inserted = 0
+    corrected = 0
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        for _ in range(count):
+            true_label_name = random.choice(label_names)
+            base = random.choice(BIASED_TEXTS[true_label_name])
+            text = f"{base} [{uuid.uuid4().hex[:6]}]"
+
+            resp = await client.post(f"{api_url}/api/predict", json={"text": text})
+            if resp.status_code != 200:
+                print(f"predict failed: {resp.status_code} {resp.text[:120]}")
+                continue
+            body = resp.json()
+            pid = body.get("prediction_id")
+            predicted = body["label"]
+            inserted += 1
+
+            should_be_wrong = random.random() < wrong_rate
+            if should_be_wrong and predicted == true_label_name:
+                other_ids = [i for i, n in enumerate(label_names) if n != true_label_name]
+                correct_id = random.choice(other_ids)
+            else:
+                correct_id = label_names.index(true_label_name)
+
+            if pid:
+                cresp = await client.patch(
+                    f"{api_url}/api/predictions/{pid}/correct",
+                    json={"corrected_label": correct_id},
+                )
+                if cresp.status_code == 200:
+                    corrected += 1
+
+    print(
+        f"Feedback simulation: issued {inserted} /predict calls, submitted {corrected} corrections "
+        f"({int(wrong_rate*100)}% intended wrong-rate)"
+    )
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Simulate distribution drift in the prediction log")
-    parser.add_argument("--count", type=int, default=200, help="Number of biased predictions to insert")
-    parser.add_argument("--dominant", default="Sports", help="Class to over-represent")
+    parser = argparse.ArgumentParser(
+        description="Simulate distribution drift and/or user feedback to exercise the retrain pipeline"
+    )
+    sub = parser.add_subparsers(dest="mode", required=False)
+
+    drift = sub.add_parser("drift", help="Inject biased PredictionLog rows (default mode)")
+    drift.add_argument("--count", type=int, default=200)
+    drift.add_argument("--dominant", default="Sports")
+    drift.add_argument("--confidence", type=float, default=0.92)
+    drift.add_argument("--low-confidence", action="store_true")
+    drift.add_argument("--no-check", action="store_true")
+
+    fb = sub.add_parser("feedback", help="Simulate users correcting predictions via the API")
+    fb.add_argument("--count", type=int, default=40)
+    fb.add_argument("--wrong-rate", type=float, default=0.4,
+                    help="Fraction of corrections that disagree with the prediction (0-1)")
+    fb.add_argument("--api-url", default=os.environ.get("API_URL", "http://backend:8000"))
+
+    parser.add_argument("--count", type=int, default=200)
+    parser.add_argument("--dominant", default="Sports")
     parser.add_argument("--confidence", type=float, default=0.92)
-    parser.add_argument("--low-confidence", action="store_true",
-                        help="Use 0.4-0.6 confidences to trigger confidence (PageHinkley) drift")
-    parser.add_argument("--no-check", action="store_true", help="Skip the drift check after inserting")
+    parser.add_argument("--low-confidence", action="store_true")
+    parser.add_argument("--no-check", action="store_true")
     args = parser.parse_args()
 
     async def _run():
+        if args.mode == "feedback":
+            await simulate_user_feedback(args.count, args.wrong_rate, args.api_url)
+            return
+
         await insert_biased(args.count, args.dominant, args.confidence, args.low_confidence)
         if not args.no_check:
             await run_drift_check()

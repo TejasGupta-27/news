@@ -10,6 +10,7 @@ class PredictRequest(BaseModel):
 
 
 class PredictResponse(BaseModel):
+    prediction_id: UUID | None = None
     label: str
     label_id: int
     confidence: float

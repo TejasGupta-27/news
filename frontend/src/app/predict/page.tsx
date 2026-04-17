@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { PredictResponse } from "@/lib/types";
 import ConfidenceBar from "@/components/ConfidenceBar";
 import ExplanationChart from "@/components/ExplanationChart";
+import FeedbackWidget from "@/components/FeedbackWidget";
 
 const LABEL_COLORS: Record<string, string> = {
   World: "bg-blue-100 text-blue-800",
@@ -93,6 +94,13 @@ export default function PredictPage() {
           <p className="text-xs text-gray-400">Model: {result.model_version}</p>
 
           {result.explanation && <ExplanationChart explanation={result.explanation} />}
+
+          {result.prediction_id && (
+            <FeedbackWidget
+              predictionId={result.prediction_id}
+              predictedLabelId={result.label_id}
+            />
+          )}
         </div>
       )}
     </div>

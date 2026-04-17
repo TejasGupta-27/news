@@ -67,6 +67,7 @@ async def predict(req: PredictRequest, db: AsyncSession = Depends(get_db)):
     db.add(log)
     await db.commit()
 
+    response_data["prediction_id"] = str(log.id)
     return PredictResponse(**response_data)
 
 
