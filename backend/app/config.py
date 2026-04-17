@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     retrain_f1_regression_tolerance: float = 0.02
     cache_ttl_seconds: int = 3600
     label_names: list[str] = ["World", "Sports", "Business", "Technology"]
+    # Pairwise A/B: model B HF repo (empty = same backbone as model_name with seeded random head)
+    ab_model_b_hf_repo: str = ""
+    ab_model_b_init_seed: int = 42
+    ab_decision_epsilon: float = 0.02
+    ab_feedback_refresh_interval_minutes: int = 1
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

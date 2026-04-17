@@ -32,10 +32,13 @@ cp .env.example .env
 
 Required for auto-push to HF Hub (leave blank to disable):
 ```
-HF_MODEL_REPO=<your-username>/ai-news-classifier
+HF_MODEL_REPO=tron/news-khabar
+AB_MODEL_B_HF_REPO=tron/news-khabar-b
 HF_TOKEN=hf_xxx
 HF_PRIVATE=false
 ```
+
+If `AB_MODEL_B_HF_REPO` is set, the backend loads model B from that HF repo for A/B routing. Otherwise model B falls back to a seeded-random-head variant of the base model.
 
 Required for W&B tracking (leave blank to disable):
 ```
@@ -54,6 +57,12 @@ docker compose ps
 
 # 3. Train the initial model (inside the backend container)
 docker exec news-backend-1 python /app/ml/scripts/train_initial.py
+```
+
+To train or push the A/B model B separately, run:
+
+```bash
+docker exec news-backend-1 sh -c 'HF_MODEL_REPO=tron/news-khabar-b python /app/ml/scripts/train_initial.py'
 ```
 
 `train_initial.py` will:

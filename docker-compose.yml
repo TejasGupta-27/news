@@ -99,6 +99,7 @@ services:
       WANDB_ENABLED: ${WANDB_ENABLED:-true}
       WANDB_PROJECT: ai-news-classifier
       HF_MODEL_REPO: ${HF_MODEL_REPO:-}
+      AB_MODEL_B_HF_REPO: ${AB_MODEL_B_HF_REPO:-}
       HF_TOKEN: ${HF_TOKEN:-}
       HF_PRIVATE: ${HF_PRIVATE:-false}
     ports:

@@ -1,6 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -10,13 +12,16 @@ class PredictRequest(BaseModel):
 
 
 class PredictResponse(BaseModel):
-    prediction_id: UUID | None = None
+    prediction_id: str | None = None
     label: str
     label_id: int
     confidence: float
     probabilities: dict[str, float]
     explanation: list[dict] | None = None
     model_version: str
+    # When A/B routing is on, /predict samples primary (a) vs challenger (b) using stored p_use_model_a.
+    ab_routing_enabled: bool = False
+    ab_served_model: Literal["a", "b"] = "a"
 
 
 class PredictionItem(BaseModel):

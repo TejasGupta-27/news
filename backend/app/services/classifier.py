@@ -104,3 +104,51 @@ class ClassifierService:
 
 
 classifier_service = ClassifierService()
+
+
+class AbModelBClassifier(ClassifierService):
+    """Second classifier for interleaved A/B comparisons (independent of drift tooling)."""
+
+    def _load_model_sync(self):
+        loaded = False
+        repo = (settings.ab_model_b_hf_repo or "").strip()
+        if repo:
+            try:
+                token = settings.hf_token or None
+                hf_repo = repo
+                if "/" not in hf_repo and token:
+                    try:
+                        from huggingface_hub import whoami
+
+                        user = whoami(token=token).get("name")
+                        if user:
+                            hf_repo = f"{user}/{hf_repo}"
+                    except Exception as e:
+                        print(f"AB B whoami lookup failed: {e}")
+                print(f"Loading A/B model B from Hugging Face Hub: {hf_repo}")
+                self.model = AutoModelForSequenceClassification.from_pretrained(
+                    hf_repo, token=token
+                )
+                self.tokenizer = AutoTokenizer.from_pretrained(hf_repo, token=token)
+                self.model_version = f"hf:{hf_repo}"
+                loaded = True
+            except Exception as e:
+                print(f"A/B model B HF load failed ({e}); falling back to seeded base head")
+        if not loaded:
+            print(
+                "Loading A/B model B as base checkpoint with fixed seed (random classification head)..."
+            )
+            torch.manual_seed(settings.ab_model_b_init_seed)
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                settings.model_name, num_labels=len(settings.label_names)
+            )
+            self.tokenizer = AutoTokenizer.from_pretrained(settings.model_name)
+            self.model_version = (
+                f"ab-b:base:{settings.model_name}:seed{settings.ab_model_b_init_seed}"
+            )
+        self.model.to(self.device)
+        self.model.eval()
+        print(f"A/B model B loaded: {self.model_version}")
+
+
+ab_classifier_b = AbModelBClassifier()

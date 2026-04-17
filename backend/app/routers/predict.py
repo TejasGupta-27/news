@@ -1,4 +1,6 @@
 from uuid import UUID
+import asyncio
+import random
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
@@ -13,7 +15,8 @@ from app.schemas.prediction import (
     PredictionItem,
     CorrectRequest,
 )
-from app.services.classifier import classifier_service
+from app.services.ab_routing import ensure_routing_state
+from app.services.classifier import ab_classifier_b, classifier_service
 from app.utils.cache import text_hash, get_cached_prediction, set_cached_prediction
 from app.utils import metrics as m
 import time
@@ -25,33 +28,54 @@ router = APIRouter()
 async def predict(req: PredictRequest, db: AsyncSession = Depends(get_db)):
     hash_key = text_hash(req.text)
 
-    if not req.explain:
+    routing_state = await ensure_routing_state(db)
+    routing_active = bool(routing_state.ab_testing_enabled)
+    use_text_cache = not req.explain and not routing_active
+
+    if use_text_cache:
         cached = await get_cached_prediction(hash_key)
         if cached:
             m.cache_hits.inc()
             return PredictResponse(**cached)
         m.cache_misses.inc()
 
+    svc = classifier_service
+    served = "a"
+    if routing_active:
+        p = min(1.0, max(0.0, float(routing_state.p_use_model_a)))
+        if random.random() >= p:
+            svc = ab_classifier_b
+            served = "b"
+
     t0 = time.perf_counter()
-    result = classifier_service.predict(req.text)
+    result = await asyncio.to_thread(svc.predict, req.text)
+    model_version = svc.model_version
     m.prediction_latency.observe(time.perf_counter() - t0)
-    m.prediction_total.labels(
-        label=result["label"], model_version=classifier_service.model_version
-    ).inc()
+    m.prediction_total.labels(label=result["label"], model_version=model_version).inc()
     m.prediction_confidence.observe(result["confidence"])
 
     explanation = None
     if req.explain:
-        from app.services.explainer import explain_prediction
-        explanation = explain_prediction(req.text, result["label_id"])
+        try:
+            from app.services.explainer import explain_prediction
+            # Run explanation generation in thread to avoid blocking
+            explanation = await asyncio.to_thread(
+                explain_prediction, req.text, result["label_id"]
+            )
+        except Exception as e:
+            print(f"Error generating explanation: {e}")
+            # Continue without explanation on error
+            explanation = None
 
     response_data = {
         **result,
         "explanation": explanation,
-        "model_version": classifier_service.model_version,
+        "model_version": model_version,
+        "ab_routing_enabled": routing_active,
+        "ab_served_model": served,
     }
 
-    if not req.explain:
+    if use_text_cache:
         await set_cached_prediction(hash_key, response_data)
 
     log = PredictionLog(
@@ -62,7 +86,7 @@ async def predict(req: PredictRequest, db: AsyncSession = Depends(get_db)):
         confidence=result["confidence"],
         probabilities=result["probabilities"],
         explanation=explanation,
-        model_version=classifier_service.model_version,
+        model_version=model_version,
     )
     db.add(log)
     await db.commit()

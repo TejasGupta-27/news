@@ -1,3 +1,4 @@
+import argparse
 import sys
 import os
 import tempfile
@@ -8,15 +9,42 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 
-from pipeline.dataset import load_ag_news, get_reference_distribution, LABEL_MAP
+from pipeline.dataset import (
+    LABEL_MAP,
+    get_reference_distribution,
+    load_20_newsgroups,
+    load_ag_news,
+)
 from pipeline.tokenizer import get_tokenizer, tokenize_dataset
 from pipeline.trainer import create_model, train_model
 from pipeline.metrics import compute_metrics, full_report
 from pipeline.registry import log_training_run, promote_to_production
 from pipeline import wandb_tracker
+from pipeline import hf_hub
 
 
 def main():
+    p = argparse.ArgumentParser()
+    p.add_argument(
+        "--hf-model-repo",
+        default=None,
+        help="Optional Hugging Face repo to push this model to; overrides HF_MODEL_REPO env var",
+    )
+    p.add_argument(
+        "--dataset",
+        choices=["ag_news", "20_newsgroups"],
+        default=None,
+        help="Dataset to train on. If omitted, model B repos ending in '-b' default to 20_newsgroups.",
+    )
+    args = p.parse_args()
+
+    dataset = args.dataset
+    if dataset is None:
+        if args.hf_model_repo and args.hf_model_repo.endswith("-b"):
+            dataset = "20_newsgroups"
+        else:
+            dataset = "ag_news"
+
     use_wandb = wandb_tracker.is_enabled()
     train_config = {
         "model_name": "distilbert-base-uncased",
@@ -24,7 +52,7 @@ def main():
         "batch_size": 32,
         "learning_rate": 2e-5,
         "max_seq_length": 256,
-        "dataset": "ag_news",
+        "dataset": dataset,
     }
 
     # W&B init first so HF Trainer can attach to the same run
@@ -32,8 +60,12 @@ def main():
         print("Initializing W&B...")
         wandb_tracker.setup_wandb(run_name="initial-training", config=train_config)
 
-    print("Loading AG News dataset...")
-    train_ds, test_ds = load_ag_news()
+    if dataset == "ag_news":
+        print("Loading AG News dataset...")
+        train_ds, test_ds = load_ag_news()
+    else:
+        print("Loading 20 Newsgroups dataset and mapping into 4 label buckets...")
+        train_ds, test_ds = load_20_newsgroups()
 
     ref_dist = get_reference_distribution(test_ds)
     print(f"Reference distribution: {ref_dist}")
@@ -100,10 +132,10 @@ def main():
     promote_to_production(run_id)
     print("Model promoted to production.")
 
-    from pipeline import hf_hub
-    if hf_hub.is_enabled():
+    repo = args.hf_model_repo or os.environ.get("HF_MODEL_REPO")
+    if repo:
         try:
-            hf_hub.push_model(model_save_dir, mlflow_run_id=run_id, metrics=metrics)
+            hf_hub.push_model(model_save_dir, repo_id=repo, mlflow_run_id=run_id, metrics=metrics)
         except Exception as e:
             print(f"HF push failed (non-fatal): {e}")
     else:

@@ -5,7 +5,13 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.db import Base
-from app.models import PredictionLog, DriftReport, TrainingRun  # noqa: F401
+from app.models import (  # noqa: F401
+    PredictionLog,
+    DriftReport,
+    TrainingRun,
+    PairwiseComparison,
+    AbRoutingState,
+)
 
 config = context.config
 

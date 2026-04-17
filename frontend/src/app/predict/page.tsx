@@ -34,10 +34,24 @@ export default function PredictPage() {
         body: JSON.stringify({ text, explain }),
       });
       setResult(res);
+      setError("");
     } catch (err) {
-      setError("Classification failed. Is the backend running?");
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      console.error("Prediction error:", errorMsg);
+      setError(
+        "Classification failed. Please check if the backend is running and try again."
+      );
+      setResult(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleExplain = (checked: boolean) => {
+    setExplain(checked);
+    // Clear result when toggling explanation to prompt re-prediction
+    if (result) {
+      setResult(null);
     }
   };
 
@@ -53,24 +67,38 @@ export default function PredictPage() {
           onChange={(e) => setText(e.target.value)}
         />
         <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input
               type="checkbox"
               checked={explain}
-              onChange={(e) => setExplain(e.target.checked)}
-              className="rounded"
+              onChange={(e) => handleToggleExplain(e.target.checked)}
+              className="rounded cursor-pointer w-4 h-4"
             />
-            Include explanations (slower)
+            <span className="flex items-center gap-1">
+              Include explanations
+              {explain && <span className="text-xs text-amber-600">(slower)</span>}
+            </span>
           </label>
           <button
             type="submit"
             disabled={loading}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
           >
-            {loading ? "Classifying..." : "Classify"}
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <span className="animate-spin">⏳</span>
+                {explain ? "Classifying with explanations..." : "Classifying..."}
+              </span>
+            ) : (
+              "Classify"
+            )}
           </button>
         </div>
-        {error && <p className="text-red-500 text-sm">{error}</p>}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
       </form>
 
       {result && (
@@ -92,8 +120,21 @@ export default function PredictPage() {
           <ConfidenceBar probabilities={result.probabilities} />
 
           <p className="text-xs text-gray-400">Model: {result.model_version}</p>
+          {result.ab_routing_enabled && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 inline-block">
+              A/B routing on — this request used checkpoint{" "}
+              <strong>{result.ab_served_model === "b" ? "B (challenger)" : "A (primary)"}</strong>
+              .
+            </p>
+          )}
 
-          {result.explanation && <ExplanationChart explanation={result.explanation} />}
+          {result.explanation && result.explanation.length > 0 ? (
+            <ExplanationChart explanation={result.explanation} />
+          ) : explain ? (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-lg text-sm">
+              Explanations were requested but could not be generated. Showing basic classification only.
+            </div>
+          ) : null}
 
           {result.prediction_id && (
             <FeedbackWidget

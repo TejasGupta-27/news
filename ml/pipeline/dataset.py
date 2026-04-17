@@ -4,11 +4,61 @@ from datasets import Dataset, concatenate_datasets, load_dataset
 
 LABEL_MAP = {0: "World", 1: "Sports", 2: "Business", 3: "Technology"}
 
+_LABEL_NAME_TO_ID = {name: idx for idx, name in LABEL_MAP.items()}
+
 
 def load_ag_news(max_train_samples: int | None = None, max_test_samples: int | None = None):
     ds = load_dataset("ag_news")
     train_ds = ds["train"]
     test_ds = ds["test"]
+    if max_train_samples:
+        train_ds = train_ds.select(range(min(max_train_samples, len(train_ds))))
+    if max_test_samples:
+        test_ds = test_ds.select(range(min(max_test_samples, len(test_ds))))
+    return train_ds, test_ds
+
+
+def load_20_newsgroups(max_train_samples: int | None = None, max_test_samples: int | None = None):
+    from sklearn.datasets import fetch_20newsgroups
+
+    category_to_label = {
+        "alt.atheism": "World",
+        "comp.graphics": "Technology",
+        "comp.os.ms-windows.misc": "Technology",
+        "comp.sys.ibm.pc.hardware": "Technology",
+        "comp.sys.mac.hardware": "Technology",
+        "comp.windows.x": "Technology",
+        "misc.forsale": "Business",
+        "rec.autos": "Sports",
+        "rec.motorcycles": "Sports",
+        "rec.sport.baseball": "Sports",
+        "rec.sport.hockey": "Sports",
+        "sci.crypt": "Technology",
+        "sci.electronics": "Technology",
+        "sci.med": "Technology",
+        "sci.space": "Technology",
+        "soc.religion.christian": "World",
+        "talk.politics.guns": "World",
+        "talk.politics.mideast": "World",
+        "talk.politics.misc": "World",
+        "talk.religion.misc": "World",
+    }
+
+    def build_dataset(subset: str):
+        raw = fetch_20newsgroups(subset=subset, remove=())
+        texts = raw.data
+        labels = []
+        for target in raw.target:
+            category = raw.target_names[target]
+            mapped = category_to_label.get(category)
+            if mapped is None:
+                raise ValueError(f"Unknown 20 Newsgroups category: {category}")
+            labels.append(_LABEL_NAME_TO_ID[mapped])
+        ds = Dataset.from_dict({"text": texts, "label": labels})
+        return ds
+
+    train_ds = build_dataset("train")
+    test_ds = build_dataset("test")
     if max_train_samples:
         train_ds = train_ds.select(range(min(max_train_samples, len(train_ds))))
     if max_test_samples:
