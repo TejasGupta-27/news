@@ -67,7 +67,12 @@ export default function MonitorPage() {
                         }`}
                       >
                         {r.label_drift_detected ? "Detected" : "Normal"}{" "}
-                        {r.label_drift_pvalue !== null && `(p=${r.label_drift_pvalue.toFixed(4)})`}
+                        {r.label_drift_pvalue !== null &&
+                          `(p=${
+                            r.label_drift_pvalue < 0.001
+                              ? r.label_drift_pvalue.toExponential(2)
+                              : r.label_drift_pvalue.toFixed(4)
+                          })`}
                       </span>
                     </td>
                     <td className="px-4 py-3">

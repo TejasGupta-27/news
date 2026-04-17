@@ -7,6 +7,25 @@ from sqlalchemy import select
 from app.config import settings
 
 _scheduler: BackgroundScheduler | None = None
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _fire_and_forget(coro):
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+
+    def _log_err(t: asyncio.Task):
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc:
+            import traceback
+            print(f"[bg task error] {exc!r}")
+            traceback.print_exception(type(exc), exc, exc.__traceback__)
+
+    task.add_done_callback(_log_err)
+    return task
 
 
 def start_drift_scheduler():
@@ -42,6 +61,7 @@ async def run_drift_check():
     from app.config import settings
     from app.models.prediction import PredictionLog
     from app.models.drift_report import DriftReport
+    from app.models.training_run import TrainingRun
     from app.services.drift_detector import (
         check_label_drift,
         check_confidence_drift,
@@ -53,16 +73,36 @@ async def run_drift_check():
     local_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with local_session() as db:
-        query = (
-            select(PredictionLog)
-            .order_by(PredictionLog.created_at.desc())
-            .limit(settings.drift_window_size)
+        last_deploy_q = (
+            select(TrainingRun)
+            .where(TrainingRun.status == "completed", TrainingRun.deployed.is_(True))
+            .order_by(TrainingRun.completed_at.desc())
+            .limit(1)
         )
+        last_deploy = (await db.execute(last_deploy_q)).scalar_one_or_none()
+        since_deploy = last_deploy.completed_at if last_deploy else None
+
+        running_q = select(TrainingRun).where(TrainingRun.status == "running").limit(1)
+        running = (await db.execute(running_q)).scalar_one_or_none()
+        if running:
+            print(f"Retrain already running (started {running.started_at}); skipping drift check")
+            await engine.dispose()
+            return None
+
+        query = select(PredictionLog).order_by(PredictionLog.created_at.desc())
+        if since_deploy is not None:
+            query = query.where(PredictionLog.created_at > since_deploy)
+        query = query.limit(settings.drift_window_size)
         result = await db.execute(query)
         predictions = result.scalars().all()
 
         if len(predictions) < 30:
-            print(f"Not enough predictions for drift check ({len(predictions)})")
+            if since_deploy:
+                print(
+                    f"Only {len(predictions)} predictions since last deploy at {since_deploy}; skipping drift check"
+                )
+            else:
+                print(f"Not enough predictions for drift check ({len(predictions)})")
             return None
 
         labels = [p.predicted_name for p in predictions]
@@ -98,13 +138,17 @@ async def run_drift_check():
             outcome="drift" if (label_drift or conf_drift) else "ok"
         ).inc()
 
+        db.add(report)
+        await db.commit()
+        await db.refresh(report)
+
         if label_drift or conf_drift:
             print(f"Drift detected! Label p={label_pvalue:.4f}, Confidence drift={conf_drift}")
+            from app.services.retrainer import trigger_retraining
+            reason = "label_drift" if label_drift else "confidence_drift"
+            _fire_and_forget(trigger_retraining(report.id, reason))
+            print(f"[drift_worker] scheduled retrain (reason={reason}, report_id={report.id})")
             report.triggered_retraining = True
-            db.add(report)
-            await db.commit()
-        else:
-            db.add(report)
             await db.commit()
 
     await engine.dispose()

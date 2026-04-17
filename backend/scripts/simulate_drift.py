@@ -47,7 +47,11 @@ async def insert_biased(count: int, dominant: str, confidence: float, low_confid
         for i in range(count):
             text = random.choice(BIASED_TEXTS.get(dominant, BIASED_TEXTS["Sports"]))
             text = f"{text} [{uuid.uuid4().hex[:8]}]"
-            conf = random.uniform(0.4, 0.6) if low_confidence else confidence
+            conf = (
+                random.uniform(0.4, 0.6)
+                if low_confidence
+                else max(0.5, min(0.99, random.gauss(confidence, 0.03)))
+            )
             log = PredictionLog(
                 text=text,
                 text_hash=hashlib.sha256(text.encode()).hexdigest(),
@@ -65,18 +69,40 @@ async def insert_biased(count: int, dominant: str, confidence: float, low_confid
 
 
 async def run_drift_check():
-    from app.workers.drift_worker import run_drift_check as _check
-    report = await _check()
+    api_url = os.environ.get("API_URL", "http://backend:8000")
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(f"{api_url}/api/drift/check")
+            resp.raise_for_status()
+            report = resp.json()
+    except Exception as e:
+        print(f"API drift check failed ({e}); running in-process (metrics won't update)")
+        from app.workers.drift_worker import run_drift_check as _check
+        r = await _check()
+        if not r:
+            print("No drift report produced (not enough samples).")
+            return
+        report = {
+            "sample_count": r.sample_count,
+            "label_drift_pvalue": r.label_drift_pvalue,
+            "label_drift_detected": r.label_drift_detected,
+            "confidence_drift_score": r.confidence_drift_score,
+            "confidence_drift_detected": r.confidence_drift_detected,
+            "current_distribution": r.current_distribution,
+            "triggered_retraining": r.triggered_retraining,
+        }
+
     if not report:
         print("No drift report produced (not enough samples).")
         return
     print("\n=== Drift Report ===")
-    print(f"samples:             {report.sample_count}")
-    print(f"label p-value:       {report.label_drift_pvalue:.6f}")
-    print(f"label drift:         {report.label_drift_detected}")
-    print(f"confidence drift:    {report.confidence_drift_detected} (score={report.confidence_drift_score})")
-    print(f"current dist:        {report.current_distribution}")
-    print(f"triggered retrain:   {report.triggered_retraining}")
+    print(f"samples:             {report['sample_count']}")
+    print(f"label p-value:       {report['label_drift_pvalue']:.6e}")
+    print(f"label drift:         {report['label_drift_detected']}")
+    print(f"confidence drift:    {report['confidence_drift_detected']} (score={report['confidence_drift_score']})")
+    print(f"current dist:        {report['current_distribution']}")
+    print(f"triggered retrain:   {report['triggered_retraining']}")
 
 
 def main():

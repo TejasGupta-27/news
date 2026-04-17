@@ -13,17 +13,23 @@
       "title": "Current Model Version",
       "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
       "targets": [
-        {"expr": "ainews_model_info", "legendFormat": "{{version}}", "refId": "A"}
+        {"expr": "ainews_model_info", "legendFormat": "{{version}}", "refId": "A", "instant": true}
       ],
-      "options": {"reduceOptions": {"calcs": ["last"], "fields": "/^version$/"}, "textMode": "name"}
+      "options": {
+        "reduceOptions": {"calcs": ["last"], "fields": "", "values": false},
+        "textMode": "name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "center"
+      }
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Model F1 (macro)",
       "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
-      "targets": [{"expr": "ainews_model_f1_macro", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 4}}
+      "targets": [{"expr": "ainews_model_f1_macro > 0", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 4, "noValue": "—"}}
     },
     {
       "id": 3,
@@ -71,12 +77,22 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Drift label p-value (lower = more drift)",
+      "title": "Drift label p-value (log scale; lower = more drift)",
       "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
       "targets": [
-        {"expr": "ainews_drift_label_pvalue", "legendFormat": "label p-value", "refId": "A"},
-        {"expr": "vector(0.05)", "legendFormat": "threshold", "refId": "B"}
-      ]
+        {"expr": "clamp_min(ainews_drift_label_pvalue, 1e-300)", "legendFormat": "label p-value", "refId": "A"},
+        {"expr": "vector(0.05)", "legendFormat": "threshold (0.05)", "refId": "B"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "scaleDistribution": {"type": "log", "log": 10},
+            "drawStyle": "line",
+            "lineWidth": 2
+          },
+          "decimals": 3
+        }
+      }
     },
     {
       "id": 8,
