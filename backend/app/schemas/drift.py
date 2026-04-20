@@ -10,6 +10,7 @@ class DriftReportResponse(BaseModel):
     window_start: datetime
     window_end: datetime
     sample_count: int
+    model_version: str | None = None
     label_drift_pvalue: float | None
     label_drift_detected: bool
     confidence_drift_score: float | None

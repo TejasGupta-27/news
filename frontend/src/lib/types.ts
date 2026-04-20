@@ -28,6 +28,7 @@ export interface DriftReport {
   window_start: string;
   window_end: string;
   sample_count: number;
+  model_version: string | null;
   label_drift_pvalue: number | null;
   label_drift_detected: boolean;
   confidence_drift_score: number | null;
@@ -36,6 +37,8 @@ export interface DriftReport {
   current_distribution: Record<string, number>;
   triggered_retraining: boolean;
 }
+
+export type DriftLatestByModelResponse = Record<string, DriftReport | null>;
 
 export interface TrainingRun {
   id: string;

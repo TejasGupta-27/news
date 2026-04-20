@@ -12,9 +12,10 @@ import { DriftReport } from "@/lib/types";
 
 interface Props {
   reports: DriftReport[];
+  title?: string;
 }
 
-export default function DriftChart({ reports }: Props) {
+export default function DriftChart({ reports, title }: Props) {
   const MIN_P = 1e-300;
   const data = [...reports].reverse().map((r) => ({
     time: new Date(r.check_time).toLocaleString(),
@@ -31,10 +32,11 @@ export default function DriftChart({ reports }: Props) {
 
   return (
     <div className="space-y-6">
+      {title && <h3 className="text-lg font-semibold text-cyan-400">{title}</h3>}
       <div>
-        <h3 className="text-sm font-medium text-gray-700 mb-2">
+        <h4 className="text-sm font-medium text-gray-300 mb-2">
           Label Drift (p-value, log scale)
-        </h3>
+        </h4>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={data}>
             <XAxis dataKey="time" tick={{ fontSize: 10 }} />
@@ -57,7 +59,7 @@ export default function DriftChart({ reports }: Props) {
         </ResponsiveContainer>
       </div>
       <div>
-        <h3 className="text-sm font-medium text-gray-700 mb-2">Confidence Drift Score</h3>
+        <h4 className="text-sm font-medium text-gray-300 mb-2">Confidence Drift Score</h4>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={data}>
             <XAxis dataKey="time" tick={{ fontSize: 10 }} />

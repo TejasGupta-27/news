@@ -72,6 +72,8 @@ async def run_drift_check():
     engine = create_async_engine(settings.database_url, echo=False)
     local_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+    latest_created_report = None
+
     async with local_session() as db:
         last_deploy_q = (
             select(TrainingRun)
@@ -89,29 +91,32 @@ async def run_drift_check():
             await engine.dispose()
             return None
 
-        last_report_q = (
-            select(DriftReport).order_by(DriftReport.check_time.desc()).limit(1)
-        )
-        last_report = (await db.execute(last_report_q)).scalar_one_or_none()
-        if (
-            last_report
-            and last_report.label_drift_detected
-            and (last_deploy is None or last_deploy.completed_at <= last_report.check_time)
-        ):
-            print(
-                f"Unresolved drift detected at {last_report.check_time}; suppressing duplicate report"
-            )
-            await engine.dispose()
-            return last_report
-
         # Get unique model versions
         model_versions_q = select(PredictionLog.model_version).distinct()
         if since_deploy is not None:
             model_versions_q = model_versions_q.where(PredictionLog.created_at > since_deploy)
         model_versions_result = await db.execute(model_versions_q)
-        model_versions = [row[0] for row in model_versions_result.all()]
+        model_versions = [row[0] for row in model_versions_result.all() if row[0]]
 
         for model_version in model_versions:
+            last_report_q = (
+                select(DriftReport)
+                .where(DriftReport.model_version == model_version)
+                .order_by(DriftReport.check_time.desc())
+                .limit(1)
+            )
+            last_report = (await db.execute(last_report_q)).scalar_one_or_none()
+            if (
+                last_report
+                and (last_report.label_drift_detected or last_report.confidence_drift_detected)
+                and (last_deploy is None or last_deploy.completed_at <= last_report.check_time)
+            ):
+                print(
+                    f"Unresolved drift for model {model_version} at {last_report.check_time}; "
+                    "suppressing duplicate report"
+                )
+                continue
+
             query = select(PredictionLog).where(PredictionLog.model_version == model_version).order_by(PredictionLog.created_at.desc())
             if since_deploy is not None:
                 query = query.where(PredictionLog.created_at > since_deploy)
@@ -159,6 +164,7 @@ async def run_drift_check():
             db.add(report)
             await db.commit()
             await db.refresh(report)
+            latest_created_report = report
 
             if label_drift or conf_drift:
                 print(f"Drift detected for model {model_version}! Label p={label_pvalue:.4f}, Confidence drift={conf_drift}")
@@ -176,4 +182,4 @@ async def run_drift_check():
                 await db.commit()
 
     await engine.dispose()
-    return report
+    return latest_created_report

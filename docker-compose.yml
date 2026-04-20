@@ -80,6 +80,8 @@ services:
         --disable-security-middleware
 
   backend:
+    # Builds backend with all dependencies from pyproject.toml
+    # Includes: FastAPI, ML models, file processing (PyPDF2, python-docx)
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -192,6 +194,7 @@ services:
   frontend:
     build: ./frontend
     environment:
+      API_PROXY_URL: http://backend:8000
       NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
       - "3000:3000"

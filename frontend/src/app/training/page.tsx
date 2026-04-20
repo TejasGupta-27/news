@@ -30,7 +30,7 @@ export default function TrainingPage() {
   const runs = data?.items || [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 bg-gradient-to-br from-slate-800 to-slate-700 rounded-2xl shadow-2xl p-8 backdrop-blur-sm border border-slate-600">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Training History</h1>
         <button
@@ -43,9 +43,9 @@ export default function TrainingPage() {
       </div>
 
       {runs.length > 0 ? (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-slate-900/50 rounded-lg overflow-hidden border border-slate-700">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50">
+            <thead className="bg-slate-950/70 border-b border-slate-700">
               <tr>
                 <th className="px-4 py-3 text-left">Started</th>
                 <th className="px-4 py-3 text-left">Reason</th>
@@ -58,7 +58,7 @@ export default function TrainingPage() {
             </thead>
             <tbody>
               {runs.map((r) => (
-                <tr key={r.id} className="border-t">
+                <tr key={r.id} className="border-t border-slate-700 hover:bg-slate-800/30 transition-colors">
                   <td className="px-4 py-3">{new Date(r.started_at).toLocaleString()}</td>
                   <td className="px-4 py-3">{r.trigger_reason}</td>
                   <td className="px-4 py-3">
@@ -86,7 +86,7 @@ export default function TrainingPage() {
           </table>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow p-12 text-center text-gray-500">
+        <div className="bg-slate-900/50 rounded-lg p-12 text-center text-gray-500 border border-slate-700">
           No training runs yet.
         </div>
       )}
