@@ -164,9 +164,9 @@ async def predict_from_file(
     t0 = time.perf_counter()
     result = await asyncio.to_thread(svc.predict, text)
     model_version = svc.model_version
-    m.prediction_latency.observe(time.perf_counter() - t0)
+    m.prediction_latency.labels(model_version=model_version).observe(time.perf_counter() - t0)
     m.prediction_total.labels(label=result["label"], model_version=model_version).inc()
-    m.prediction_confidence.observe(result["confidence"])
+    m.prediction_confidence.labels(model_version=model_version).observe(result["confidence"])
     
     explanation = None
     if explain:

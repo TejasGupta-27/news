@@ -1,13 +1,14 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Zap, TrendingUp, Brain, Rocket } from "lucide-react";
+import { BarChart3, Zap, TrendingUp, Brain, Rocket, FlaskConical } from "lucide-react";
 
 const links = [
   { href: "/", label: "Dashboard", Icon: BarChart3 },
   { href: "/predict", label: "Classify", Icon: Zap },
   { href: "/monitor", label: "Monitor", Icon: TrendingUp },
   { href: "/training", label: "Training", Icon: Brain },
+  { href: "/ab", label: "A/B Testing", Icon: FlaskConical },
 ];
 
 export default function Navbar() {
@@ -15,7 +16,7 @@ export default function Navbar() {
 
   return (
     <nav className="sticky top-0 z-50 backdrop-blur-md border-b border-slate-700/50 bg-gradient-to-r from-slate-900/80 via-slate-900/80 to-purple-900/40">
-      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <Link href="/" className="flex items-center gap-3 group">
           <div className="text-3xl group-hover:scale-110 transition-transform">
             <Rocket className="w-8 h-8 text-cyan-400" />
@@ -28,7 +29,7 @@ export default function Navbar() {
           </div>
         </Link>
 
-        <div className="flex gap-1 ml-12">
+        <div className="flex flex-wrap gap-1 ml-auto">
           {links.map((l) => {
             const isActive = pathname === l.href;
             const Icon = l.Icon;

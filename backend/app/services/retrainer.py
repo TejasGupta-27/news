@@ -76,8 +76,11 @@ async def _execute_retrain(training_run_id: uuid.UUID, reason: str, model_type: 
                 from app.utils.cache import flush_prediction_cache
                 await flush_prediction_cache()
                 m.set_model_info(classifier_service.model_version)
-                m.model_f1_macro.set(result["f1_macro"])
-                m.model_accuracy.set(result["accuracy"])
+                m.set_model_scores(
+                    classifier_service.model_version,
+                    result["f1_macro"],
+                    result["accuracy"],
+                )
                 print("New model deployed and cache flushed")
             else:
                 run.status = "rejected"
@@ -121,6 +124,7 @@ def _retrain_sync(model_type: str = "A") -> dict:
     max_test = None if use_gpu else 500
     num_epochs = 3 if use_gpu else 1
     batch_size = 32 if use_gpu else 16
+    n_corrections = 0
 
     if model_type == "B":
         from ml.pipeline.dataset import load_20_newsgroups

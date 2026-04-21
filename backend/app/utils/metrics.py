@@ -53,10 +53,12 @@ retrain_runs_total = Counter(
 model_f1_macro = Gauge(
     "ainews_model_f1_macro",
     "F1 (macro) of the currently-deployed model",
+    ["model_version"],
 )
 model_accuracy = Gauge(
     "ainews_model_accuracy",
     "Accuracy of the currently-deployed model",
+    ["model_version"],
 )
 model_info = Gauge(
     "ainews_model_info",
@@ -68,3 +70,10 @@ model_info = Gauge(
 def set_model_info(version: str):
     model_info.clear()
     model_info.labels(version=version).set(1)
+
+
+def set_model_scores(version: str, f1_macro: float, accuracy: float):
+    model_f1_macro.clear()
+    model_accuracy.clear()
+    model_f1_macro.labels(model_version=version).set(f1_macro)
+    model_accuracy.labels(model_version=version).set(accuracy)

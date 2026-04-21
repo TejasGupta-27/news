@@ -121,6 +121,7 @@ def build_training_dataset(
     ag_cols = set(train_ds.column_names)
     keep = ["text", "label"]
     train_ds = train_ds.remove_columns([c for c in ag_cols if c not in keep])
+    corrections = corrections.cast(train_ds.features)
 
     upsampled = concatenate_datasets([corrections] * max(1, correction_upsample))
     combined = concatenate_datasets([train_ds, upsampled]).shuffle(seed=42)

@@ -2,7 +2,7 @@
   "title": "AI News Classifier",
   "uid": "ai-news",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "time": {"from": "now-1h", "to": "now"},
   "refresh": "15s",
@@ -10,7 +10,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Current Model Version",
+      "title": "Current Deployed Model (A)",
       "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
       "targets": [
         {"expr": "ainews_model_info", "legendFormat": "{{version}}", "refId": "A", "instant": true}
@@ -26,17 +26,27 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Model F1 (macro)",
+      "title": "Model A F1 (macro)",
       "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
-      "targets": [{"expr": "ainews_model_f1_macro > 0", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "ainews_model_f1_macro and on(model_version) label_replace(ainews_model_info, \"model_version\", \"$1\", \"version\", \"(.*)\")",
+          "refId": "A"
+        }
+      ],
       "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 4, "noValue": "—"}}
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "Drift Detected?",
+      "title": "Drift Detected? (Model A)",
       "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
-      "targets": [{"expr": "ainews_drift_detected", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "ainews_drift_detected and on(model_version) label_replace(ainews_model_info, \"model_version\", \"$1\", \"version\", \"(.*)\")",
+          "refId": "A"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -49,38 +59,63 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Predictions / min",
+      "title": "Predictions / min (Model A)",
       "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
-      "targets": [{"expr": "sum(rate(ainews_predictions_total[1m])) * 60", "refId": "A"}]
+      "targets": [
+        {
+          "expr": "sum((rate(ainews_predictions_total[1m])) and on(model_version) label_replace(ainews_model_info, \"model_version\", \"$1\", \"version\", \"(.*)\")) * 60",
+          "refId": "A"
+        }
+      ]
     },
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Prediction rate by class",
+      "title": "Prediction rate by class (Model A)",
       "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
       "targets": [
-        {"expr": "sum by (label) (rate(ainews_predictions_total[5m]))", "legendFormat": "{{label}}", "refId": "A"}
+        {
+          "expr": "sum by (label) ((rate(ainews_predictions_total[5m])) and on(model_version) label_replace(ainews_model_info, \"model_version\", \"$1\", \"version\", \"(.*)\"))",
+          "legendFormat": "{{label}}",
+          "refId": "A"
+        }
       ]
     },
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Prediction latency (p50/p95/p99)",
+      "title": "Prediction latency (Model A p50/p95/p99)",
       "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
       "targets": [
-        {"expr": "histogram_quantile(0.5, sum(rate(ainews_prediction_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A"},
-        {"expr": "histogram_quantile(0.95, sum(rate(ainews_prediction_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B"},
-        {"expr": "histogram_quantile(0.99, sum(rate(ainews_prediction_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C"}
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) ((rate(ainews_prediction_latency_seconds_bucket[5m])) and on(model_version) label_replace(ainews_model_info, \"model_version\", \"$1\", \"version\", \"(.*)\")))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) ((rate(ainews_prediction_latency_seconds_bucket[5m])) and on(model_version) label_replace(ainews_model_info, \"model_version\", \"$1\", \"version\", \"(.*)\")))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) ((rate(ainews_prediction_latency_seconds_bucket[5m])) and on(model_version) label_replace(ainews_model_info, \"model_version\", \"$1\", \"version\", \"(.*)\")))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
       ],
       "fieldConfig": {"defaults": {"unit": "s"}}
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Drift label p-value (log scale; lower = more drift)",
+      "title": "Drift label p-value (Model A)",
       "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
       "targets": [
-        {"expr": "clamp_min(ainews_drift_label_pvalue, 1e-300)", "legendFormat": "label p-value", "refId": "A"},
+        {
+          "expr": "clamp_min((ainews_drift_label_pvalue and on(model_version) label_replace(ainews_model_info, \"model_version\", \"$1\", \"version\", \"(.*)\")), 1e-300)",
+          "legendFormat": "label p-value",
+          "refId": "A"
+        },
         {"expr": "vector(0.05)", "legendFormat": "threshold (0.05)", "refId": "B"}
       ],
       "fieldConfig": {
@@ -97,11 +132,19 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Confidence distribution (p50/p95)",
+      "title": "Confidence distribution (Model A p50/p95)",
       "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
       "targets": [
-        {"expr": "histogram_quantile(0.5, sum(rate(ainews_prediction_confidence_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A"},
-        {"expr": "histogram_quantile(0.95, sum(rate(ainews_prediction_confidence_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B"}
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) ((rate(ainews_prediction_confidence_bucket[5m])) and on(model_version) label_replace(ainews_model_info, \"model_version\", \"$1\", \"version\", \"(.*)\")))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) ((rate(ainews_prediction_confidence_bucket[5m])) and on(model_version) label_replace(ainews_model_info, \"model_version\", \"$1\", \"version\", \"(.*)\")))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
       ]
     },
     {
