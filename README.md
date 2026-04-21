@@ -87,6 +87,34 @@ On every subsequent backend boot, the classifier loads from HF Hub first (cached
 | http://localhost:3001 | Grafana (admin / admin) → "AI News Classifier" dashboard |
 | http://localhost:9001 | MinIO console (minioadmin / minioadmin) |
 
+## External links (Hugging Face & W&B)
+
+Live artifacts from this project.
+
+### Hugging Face Hub
+
+| Link | URL |
+|---|---|
+| Model A (AG News, full) | https://huggingface.co/Tron2703/new-khabar |
+| Model B (20 Newsgroups, 10% subset) | https://huggingface.co/Tron2703/news-khabar-b |
+| Model A commits (one per retrain) | https://huggingface.co/Tron2703/new-khabar/commits/main |
+| Model B commits | https://huggingface.co/Tron2703/news-khabar-b/commits/main |
+| Inference API playground (Model A) | https://huggingface.co/Tron2703/new-khabar?text=Apple+unveils+new+chip |
+| Token management | https://huggingface.co/settings/tokens |
+
+Each commit message includes the MLflow run ID and eval metrics (see `ml/pipeline/hf_hub.py:push_model`), so every HF revision cross-references back to its MLflow run.
+
+### Weights & Biases
+
+| Link | URL |
+|---|---|
+| Project dashboard | https://wandb.ai/b22cs093-prom-iit-rajasthan/ai-news-classifier |
+| Runs table | https://wandb.ai/b22cs093-prom-iit-rajasthan/ai-news-classifier/table?nw=nwuserb22cs093 |
+| Model artifacts | https://wandb.ai/b22cs093-prom-iit-rajasthan/ai-news-classifier/artifacts/model/ai-news-classifier |
+| Authorize / get API key | https://wandb.ai/authorize |
+
+Each W&B run is tagged with `mlflow:<run-id>` and its notes field carries the MLflow run ID, so MLflow ↔ W&B ↔ HF are all cross-referenced.
+
 ## Drift simulation
 
 The drift simulator has two subcommands. Both run inside the backend container so they can reach Postgres and the API.
