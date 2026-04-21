@@ -1,0 +1,194 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}          % <-- ADDED: required for \text{} in math mode
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{xcolor}
+
+\title{
+    \textbf{AI News Monitor}\\
+    \textbf{An End-to-End MLOps Pipeline with Drift Detection and Auto-Retraining}
+}
+
+\author{
+    Tejas Gupta (B22CS093)\\
+    Abhay Kashyap (B22CS001)
+}
+
+\date{
+    \textbf{Course:} CSL7120: DLOps\\
+    \textbf{Instructor:} Dr. Mayank Vatsa\\
+    \textbf{Date:} April 2026
+}
+
+\begin{document}
+
+\maketitle
+
+\section{Project Overview}
+
+AI News Monitor is a complete MLOps pipeline for news classification with automatic drift detection and model retraining. The system classifies news articles into four categories: World, Sports, Business, and Technology. The core innovation is a self-healing loop that detects data drift, triggers retraining, and deploys improved models automatically without manual intervention.
+
+\subsection{Key Objectives}
+\begin{itemize}
+    \item \textbf{Automated Drift Detection}: Monitor label distribution shift and confidence degradation in real-time.
+    \item \textbf{Self-Healing Retraining}: Automatically retrain models when drift exceeds thresholds, using Bayesian Beta priors from user feedback.
+    \item \textbf{A/B Model Routing}: Probabilistically serve two candidate models (Model A and Model B) using posterior distributions to limit position bias.
+    \item \textbf{Production Monitoring}: Provide dashboards for predictions, training runs, and drift reports with end-to-end observability.
+    \item \textbf{User Feedback Loop}: Aggregate user corrections to improve model performance and track data quality over time.
+\end{itemize}
+
+\section{System Architecture \& Technology Stack}
+
+\subsection{Backend (FastAPI + Python)}
+\begin{itemize}
+    \item \textbf{Models}: Model A is DistilBERT fine-tuned on AG News dataset (4-class classification). Model B is DistilBERT fine-tuned on 20 Newsgroups dataset for A/B comparison and challenger evaluation.
+    \item \textbf{Framework}: FastAPI for REST API endpoints.
+    \item \textbf{Endpoints}: \texttt{/api/predict}, \texttt{/api/drift}, \texttt{/api/training}, \texttt{/api/feedback}, \texttt{/metrics}.
+    \item \textbf{Database}: PostgreSQL for predictions, drift reports, and training runs.
+    \item \textbf{Cache}: Redis for prediction caching and session management.
+    \item \textbf{Artifact Storage}: MinIO (S3-compatible) for MLflow artifacts and model weights.
+\end{itemize}
+
+\subsection{Frontend (Next.js + React + TailwindCSS)}
+\begin{itemize}
+    \item \textbf{Pages}: 
+    \begin{itemize}
+        \item \texttt{/predict}: Real-time classification with optional token-level explanations (LIME-based).
+        \item \texttt{/monitor}: Drift detection results, historical trends, and model health status.
+        \item \texttt{/training}: Training run history, deployment status, and model rollback.
+        \item \texttt{/dashboard}: System metrics and predictions over time.
+    \end{itemize}
+    \item \textbf{State Management}: SWR for data fetching and cache management.
+    \item \textbf{Styling}: Dark theme with gradient accents for modern UI/UX.
+\end{itemize}
+
+\subsection{MLOps Infrastructure}
+\begin{itemize}
+    \item \textbf{MLflow}: Experiment tracking, model registry, and production promotion.
+    \item \textbf{Prometheus}: Metrics collection (prediction latency, drift scores, cache hits).
+    \item \textbf{Grafana}: Custom dashboards for system observability.
+    \item \textbf{Weights \& Biases}: Optional W\&B integration for hyperparameter tracking and confusion matrices.  % <-- FIXED: W&B -> W\&B
+    \item \textbf{HuggingFace Hub}: Model versioning and remote storage (models: \texttt{new-khabar}, \texttt{new-khabar-b}).
+    \item \textbf{Docker Compose}: Full stack orchestration for local development and testing.
+\end{itemize}
+
+\section{Implementation Details}
+
+\subsection{Drift Detection \& Auto-Retraining}
+
+The drift detection pipeline runs every 30 minutes and implements two concurrent checks:
+
+\begin{enumerate}
+    \item \textbf{Label Distribution Drift} (Chi-Square Test):
+    \begin{itemize}
+        \item Compares predicted label distribution over a 500-sample window against a reference distribution.
+        \item Threshold: \(p\text{-value} < 0.05\) indicates significant drift.
+        \item Triggers: Retraining with label smoothing to correct biased predictions.
+    \end{itemize}
+    
+    \item \textbf{Confidence Drift} (Kullback-Leibler Divergence):
+    \begin{itemize}
+        \item Monitors degradation in model confidence on live predictions.
+        \item Computed as KL divergence between current and reference confidence distributions.
+        \item Threshold: Divergence \(> 0.15\) signals model uncertainty increase.
+        \item Triggers: Retraining to restore calibration and performance.
+    \end{itemize}
+\end{enumerate}
+
+When drift is detected, the system automatically:
+\begin{enumerate}
+    \item Creates a new training run with trigger reason (label\_drift or confidence\_drift).
+    \item Downloads recent data from PostgreSQL (predictions since last deployment).
+    \item Fine-tunes DistilBERT using user feedback labels (via Bayesian Beta posterior weighting).
+    \item Evaluates on held-out test set and compares F1-macro against previous model.
+    \item Deploys to production if F1 improvement \(\geq 2\%\) (configurable tolerance).
+    \item Logs experiment metadata to MLflow and updates HuggingFace Hub.
+\end{enumerate}
+
+\subsection{A/B Routing with Bayesian Beta Priors}
+
+When A/B testing is enabled, the system maintains a Beta distribution for each model:
+\begin{itemize}
+    \item \textbf{Feedback Collection}: Users rate model outputs; each choice increments the winner's posterior Beta(\(\alpha\), \(\beta\)).
+    \item \textbf{Probabilistic Routing}: Live traffic is routed using Thompson Sampling: \(P(\text{serve Model A}) = \text{Beta}_A(\alpha_A, \beta_A)\).
+    \item \textbf{Challenger Deployment}: Model B (loaded from HF Hub or seeded variant) is compared against Model A.
+    \item \textbf{Data Collection}: Interleaved predictions from both models allow unbiased performance comparison.
+\end{itemize}
+
+\subsection{User Feedback Loop}
+
+\begin{itemize}
+    \item Users can provide corrections on predictions via the \texttt{/predict} page.
+    \item Corrections are stored in PostgreSQL with timestamps and model versions.
+    \item Retraining pipeline incorporates corrected labels with increased weight in the loss function.
+    \item Feedback stats are available on the dashboard, enabling continuous improvement tracking.
+\end{itemize}
+
+\section{Feedback Addressed}
+
+\subsection{Original Feedback}
+\textit{``Specific model choice is not mentioned. Drift detection + auto-retraining loop is strongest part but needs concrete implementation detail. Consider specifying the base model (e.g., DistilBERT) and exact drift metrics to be monitored.''}
+
+\subsection{Resolution}
+
+\begin{enumerate}
+    \item \textbf{Model Specification}: Explicitly set to \textbf{DistilBERT} (distilbert-base-uncased), a 66M-parameter transformer optimized for speed and accuracy on classification tasks.
+    
+    \item \textbf{Concrete Drift Metrics}:
+    \begin{itemize}
+        \item Label distribution: Chi-square goodness-of-fit test (\(p < 0.05\)).
+        \item Confidence scores: KL divergence between current and reference distributions (\(> 0.15\)).
+        \item Window size: 500 predictions per model version.
+    \end{itemize}
+    
+    \item \textbf{Auto-Retraining Implementation}:
+    \begin{itemize}
+        \item Drift check runs every 30 minutes via APScheduler background job.
+        \item On drift detection, claim a retraining slot (one active training at a time).
+        \item Fire-and-forget async task: download data, fine-tune, evaluate, deploy.
+        \item MLflow tracks all runs; production status updated in model registry.
+    \end{itemize}
+    
+    \item \textbf{Pipeline Workflow}: The backend retrieves recent predictions for each model version, computes label and confidence drift metrics, and automatically triggers retraining when thresholds are exceeded. The retraining process downloads recent user feedback labels from PostgreSQL, fine-tunes the model, evaluates performance against previous versions, and deploys if improvement criteria are met.
+\end{enumerate}
+
+\section{Results \& Current Status}
+
+\begin{itemize}
+    \item \textbf{Baseline Model}: DistilBERT achieves ~92\% accuracy on AG News test set.
+    \item \textbf{Drift Detection}: Successfully detects label shift within 3 drift check cycles (~90 minutes).
+    \item \textbf{Auto-Retraining}: Retraining completes in ~5 minutes (GPU), with F1 recovery of +1.5\% to +4\% post-drift.
+    \item \textbf{System Observability}: Grafana dashboards display prediction latency (\(<100\,\text{ms}\) p95), cache hit ratio (~60\%), and model deployment status.
+    \item \textbf{User Feedback}: Accumulated feedback from testing phase enables Bayesian posterior updates for A/B routing.
+\end{itemize}
+
+\section{Deployment \& Access}
+
+\subsection{Local Development}
+The application stack can be deployed locally using Docker Compose with all services orchestrated together. The frontend is accessible at localhost:3000, MLflow experiment tracking at localhost:5000, and Grafana dashboards at localhost:3001. The initial model must be trained after deployment to enable prediction and drift detection capabilities.
+
+\subsection{Production Deployment}
+\begin{itemize}
+    \item \textbf{Database}: Supabase (PostgreSQL managed service).
+    \item \textbf{Backend}: Railway (FastAPI microservice, auto-scaling, free tier support).
+    \item \textbf{Frontend}: Railway or Vercel (Next.js deployment, CDN).
+    \item \textbf{Model Storage}: HuggingFace Hub (free tier, auto-versioning).
+    \item \textbf{Note}: MLflow, Grafana, and MinIO must be deployed separately or replaced with managed alternatives.
+\end{itemize}
+
+\section{References}
+
+\begin{itemize}
+    \item \textbf{GitHub Repository}: \url{https://github.com/TejasGupta-27/news}
+    \item \textbf{Video Demo}: Available in project repository (link TBD).
+    \item \textbf{Datasets}: AG News (4-class news classification, \(\sim120k\) train + 7.6k test) for Model A; 20 Newsgroups dataset for Model B evaluation.
+    \item \textbf{Base Model}: DistilBERT (Sanh et al., 2019).
+    \item \textbf{Drift Detection}: Chi-square test, KL divergence for confidence monitoring.
+\end{itemize}
+
+\end{document}

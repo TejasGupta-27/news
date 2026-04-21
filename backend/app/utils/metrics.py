@@ -10,12 +10,14 @@ prediction_total = Counter(
 prediction_latency = Histogram(
     "ainews_prediction_latency_seconds",
     "Prediction latency (model.predict only)",
+    ["model_version"],
     buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
 )
 
 prediction_confidence = Histogram(
     "ainews_prediction_confidence",
     "Confidence of each prediction",
+    ["model_version"],
     buckets=(0.25, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 1.0),
 )
 
@@ -25,19 +27,22 @@ cache_misses = Counter("ainews_cache_misses_total", "Prediction cache misses")
 drift_label_pvalue = Gauge(
     "ainews_drift_label_pvalue",
     "Most recent label-drift chi-square p-value",
+    ["model_version"],
 )
 drift_confidence_score = Gauge(
     "ainews_drift_confidence_score",
     "Most recent confidence-drift score (PageHinkley)",
+    ["model_version"],
 )
 drift_detected = Gauge(
     "ainews_drift_detected",
     "1 if last drift check fired (label or confidence), else 0",
+    ["model_version"],
 )
 drift_checks_total = Counter(
     "ainews_drift_checks_total",
     "Number of drift checks run",
-    ["outcome"],
+    ["outcome", "model_version"],
 )
 
 retrain_runs_total = Counter(

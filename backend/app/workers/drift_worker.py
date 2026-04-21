@@ -154,11 +154,12 @@ async def run_drift_check():
             )
 
             from app.utils import metrics as m
-            m.drift_label_pvalue.set(label_pvalue)
-            m.drift_confidence_score.set(conf_score)
-            m.drift_detected.set(1 if (label_drift or conf_drift) else 0)
+            m.drift_label_pvalue.labels(model_version=model_version).set(label_pvalue)
+            m.drift_confidence_score.labels(model_version=model_version).set(conf_score)
+            m.drift_detected.labels(model_version=model_version).set(1 if (label_drift or conf_drift) else 0)
             m.drift_checks_total.labels(
-                outcome="drift" if (label_drift or conf_drift) else "ok"
+                outcome="drift" if (label_drift or conf_drift) else "ok",
+                model_version=model_version
             ).inc()
 
             db.add(report)

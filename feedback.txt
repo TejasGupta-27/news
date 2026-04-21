@@ -1,0 +1,1 @@
+Specific model choice is not mentioned ('transformer-based NLP model': which one?). The drift detection + auto-retraining loop is the strongest part but needs concrete implementation detail. Consider specifying the base model (e.g., DistilBERT) and the exact drift metrics to be monitored.
